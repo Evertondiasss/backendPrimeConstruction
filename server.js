@@ -117,53 +117,6 @@ fs.mkdirSync(UPLOADS_ROOT, { recursive: true });
 app.use('/uploads', express.static(UPLOADS_ROOT));
 
 
-// ======================
-// LOGIN CORRIGIDO COM JWT
-// ======================
-app.post('/api/login', async (req, res) => {
-  const { username, password } = req.body;
-
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Usuário e senha são obrigatórios.' });
-  }
-
-  try {
-    const conn = await pool.getConnection();
-    const [rows] = await conn.query('SELECT * FROM usuarios WHERE login = ?', [username]);
-    conn.release();
-
-    if (rows.length === 0) {
-      return res.status(401).json({ error: 'Usuário ou senha inválidos.' });
-    }
-
-    const user = rows[0];
-    const ok = await bcrypt.compare(password, user.senha);
-
-    if (!ok) {
-      return res.status(401).json({ error: 'Usuário ou senha inválidos.' });
-    }
-
-    // Gera token JWT
-    const token = jwt.sign(
-      { id: user.id, login: user.login },
-      process.env.JWT_SECRET,
-      { expiresIn: "8h" }
-    );
-
-    res.json({
-      id: user.id,
-      login: user.login,
-      nome: user.nome,
-      token
-    });
-
-  } catch (err) {
-    console.error('Erro no login:', err.message);
-    res.status(500).json({ error: 'Erro interno no servidor.' });
-  }
-});
-
-
 // ===== Start =====
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
