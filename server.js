@@ -8,8 +8,6 @@ import path from 'path';
 import fs from 'fs';
 import bcrypt from 'bcrypt';
 import pool from './config/db.js';
-import jwt from "jsonwebtoken";
-
 import obrasRoutes from './routes/obras.routes.js';
 import recebimentosRoutes from './routes/recebimentos_obra.routes.js';
 import fornecedoresRoutes from "./routes/fornecedores.routes.js";
@@ -26,68 +24,49 @@ import relatoriosRoutes from './routes/relatorios_he.routes.js';
 import funcionarioObrasRoutes from './routes/funcionario_obras.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 
+const S3_BUCKET = process.env.S3_BUCKET;
 dotenv.config();
-
-// ======================
-// MIDDLEWARE JWT
-// ======================
-function auth(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader)
-    return res.status(401).json({ error: "Sem token" });
-
-  const token = authHeader.split(" ")[1];
-
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch {
-    return res.status(401).json({ error: "Token inválido" });
-  }
-}
 
 const app = express();
 
-// ===== CORS =====
+// CORS antes das rotas
 app.use(cors({
-  origin: [
-    'http://127.0.0.1:5500',
-    'http://localhost:5500',
-    'http://localhost:5173',
-    'https://primeconstrucoes.netlify.app'
-  ],
+  origin: ['http://127.0.0.1:5500',
+           'http://localhost:5500',
+           'http://localhost:5173',
+           'https://primeconstrucoes.netlify.app'],
   methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
   allowedHeaders: ['Content-Type','Authorization'],
   credentials: true
 }));
 
+app.options(/.*/, cors());
+
 app.use(express.json());
+app.use('/api', authRoutes);  
+app.use('/api/obras', obrasRoutes);
+app.use('/api/recebimentos_obra', recebimentosRoutes);
+app.use("/api/fornecedores", fornecedoresRoutes);
+app.use("/api/categorias", categoriasRoutes);
+app.use("/api/produtos", produtosRoutes);
+app.use("/api/encargos", encargosRoutes);
+app.use("/api/pagamentos-funcionarios", pagamentosRoutes);
+app.use('/api/funcionarios', funcionariosRoutes);
+app.use('/api/compras', comprasRoutes);
+app.use('/api/parcelas', parcelasRoutes);
+app.use('/api/unidades_medida', unidadeMedidaRoutes);
+app.use('/api/relatorios_he', relatoriosRoutes);
+app.use('/api/funcionario_obras', funcionarioObrasRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
-// ======================
-// ROTAS SEM AUTH
-// ======================
-app.use('/api', authRoutes);
+app.use((req, res, next) => {
+  if (req.method === 'POST' && req.url.startsWith('/api/pagamentos-funcionarios')) {
+    console.log('Content-Type recebido:', req.headers['content-type']);
+  }
+  next();
+});
 
-// ======================
-// ROTAS PROTEGIDAS
-// ======================
-app.use('/api/obras', auth, obrasRoutes);
-app.use('/api/recebimentos_obra', auth, recebimentosRoutes);
-app.use("/api/fornecedores", auth, fornecedoresRoutes);
-app.use("/api/categorias", auth, categoriasRoutes);
-app.use("/api/produtos", auth, produtosRoutes);
-app.use("/api/encargos", auth, encargosRoutes);
-app.use("/api/pagamentos-funcionarios", auth, pagamentosRoutes);
-app.use('/api/funcionarios', auth, funcionariosRoutes);
-app.use('/api/compras', auth, comprasRoutes);
-app.use('/api/parcelas', auth, parcelasRoutes);
-app.use('/api/unidades_medida', auth, unidadeMedidaRoutes);
-app.use('/api/relatorios_he', auth, relatoriosRoutes);
-app.use('/api/funcionario_obras', auth, funcionarioObrasRoutes);
-app.use('/api/dashboard', auth, dashboardRoutes);
-
-// ===== Logger =====
+// ===== Logger simples =====
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
@@ -110,13 +89,51 @@ app.get('/', (req, res) => {
   res.send('API Prime Construções está rodando 🚀');
 });
 
-// ===== Static Uploads =====
+// ===== Uploads base =====
 const UPLOADS_ROOT = path.join(process.cwd(), 'uploads');
 fs.mkdirSync(UPLOADS_ROOT, { recursive: true });
 app.use('/uploads', express.static(UPLOADS_ROOT));
 
+// POST /api/login
 
-// ===== Start =====
+app.post('/api/login', async (req, res) => {
+  const { username, password } = req.body;
+
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Usuário e senha são obrigatórios.' });
+  }
+
+  try {
+    const conn = await pool.getConnection();
+    const [rows] = await conn.query('SELECT * FROM usuarios WHERE login = ?', [username]);
+    conn.release();
+
+    if (rows.length === 0) {
+      return res.status(401).json({ error: 'Usuário ou senha inválidos.' });
+    }
+
+    const user = rows[0];
+
+    // compara o hash armazenado com a senha digitada
+    const ok = await bcrypt.compare(password, user.senha);
+
+    if (!ok) {
+      return res.status(401).json({ error: 'Usuário ou senha inválidos.' });
+    }
+
+    res.json({
+      id: user.id,
+      login: user.login,
+      nome: user.nome,
+    });
+  } catch (err) {
+    console.error('Erro no login:', err.message);
+    res.status(500).json({ error: 'Erro interno no servidor.' });
+  }
+});
+
+/* START */
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
