@@ -1,16 +1,16 @@
 // backend/controllers/auth.controller.js
 import pool from "../config/db.js";
 import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
 
-// ================================
-// POST /api/login
-// ================================
 export async function login(req, res) {
   try {
     const { username, password } = req.body;
 
     if (!username || !password) {
-      return res.status(400).json({ error: "Usuário e senha são obrigatórios." });
+      return res
+        .status(400)
+        .json({ error: "Usuário e senha são obrigatórios." });
     }
 
     const [rows] = await pool.query(
@@ -29,10 +29,20 @@ export async function login(req, res) {
       return res.status(401).json({ error: "Usuário ou senha inválidos." });
     }
 
-    return res.json({
+    // === gera JWT ===
+    const payload = {
       id: user.id,
       login: user.login,
       nome: user.nome,
+    };
+
+    const token = jwt.sign(payload, process.env.JWT_SECRET, {
+      expiresIn: process.env.JWT_EXPIRES_IN || "2h",
+    });
+
+    return res.json({
+      user: payload,
+      token,
     });
   } catch (e) {
     console.error("POST /api/login ERRO:", e.code, e.sqlMessage || e.message);
