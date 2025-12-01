@@ -23,7 +23,7 @@ import unidadeMedidaRoutes from './routes/unidades_medida.routes.js';
 import relatoriosRoutes from './routes/relatorios_he.routes.js';
 import funcionarioObrasRoutes from './routes/funcionario_obras.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
-import { requireAuth } from './middlewares/auth.middleware.js';
+import { requireAuth } from './middleware/auth.middleware.js';
 
 
 const S3_BUCKET = process.env.S3_BUCKET;
